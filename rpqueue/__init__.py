@@ -234,8 +234,7 @@ def _enqueue_call(conn, queue, fname, args, kwargs, delay=0, taskid=None):
         pipeline.zscore(qkey, taskid)
         last, current = pipeline.execute()
         #if (last and time.time()-last < REENTRY_RETRY):
-        if (current and abs(current - time.time() - delay) < .1) or (last and abs(last - current) > 0.01 and time.time()-last < REENTRY_RETRY):
-            print("SKIPPED")
+        if (current and abs(current - time.time() - delay) < .1) or (last and current and abs(last - current) > 0.01 and time.time()-last < REENTRY_RETRY):
             log_handler.debug("SKIPPED: %s %s", taskid, fname)
             return taskid
 
