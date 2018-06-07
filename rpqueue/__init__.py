@@ -146,7 +146,7 @@ POOL = None
 
 LOG_LEVELS = dict((v, getattr(logging, v)) for v in ['DEBUG', 'INFO', 'WARNING', 'ERROR'])
 LOG_LEVEL = 'debug'
-FORMAT = FORMAT = '%(levelname)s:%(name)s:%(threadName)s:%(message)s'
+FORMAT = '%(levelname)s:%(name)s:%(process)s:%(threadName)s:%(message)s'
 logging.basicConfig(format=FORMAT)
 log_handler = logging.root
 
@@ -924,6 +924,9 @@ def execute_task_threads(queues=None, threads=1, wait_per_thread=1, module=None)
         tt.start()
         st.append(tt)
     _execute_tasks(queues)
+    while threading.active_count() > 2:
+        time.sleep(.05)
+    time.sleep(.05)
 
 def _execute_tasks(queues=None):
     '''
