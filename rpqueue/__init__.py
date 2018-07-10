@@ -235,11 +235,9 @@ def _enqueue_call(conn, queue, fname, args, kwargs, delay=0, taskid=None):
         last, current = pipeline.execute()
         #if (last and time.time()-last < REENTRY_RETRY):
         if (current and abs(current - time.time() - delay) < .1) or (last and time.time()-last>=0 and time.time()-last < REENTRY_RETRY):
-	    print("SKIPPED")
             log_handler.debug("SKIPPED: %s %s", taskid, fname)
             return taskid
 
-    print("ENQUEUED")
     message = json.dumps([taskid, fname, args, kwargs, time.time() + delay])
     # enqueue it
     pipeline.hset(ikey, taskid, message)
