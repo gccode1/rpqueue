@@ -233,8 +233,8 @@ def _enqueue_call(conn, queue, fname, args, kwargs, delay=0, taskid=None):
         pipeline.zscore(rqkey, taskid)
         pipeline.zscore(qkey, taskid)
         last, current = pipeline.execute()
-        #if (last and time.time()-last < REENTRY_RETRY):
-        if (current and abs(current - time.time() - delay) < .1) or (last and time.time()-last>=0 and time.time()-last < REENTRY_RETRY):
+        #if current or (last and time.time()-last < REENTRY_RETRY):
+        if (current and abs(current - time.time() - delay) < .1) or (last and current and abs(last - current) > 0.01 and time.time()-last < REENTRY_RETRY):
             log_handler.debug("SKIPPED: %s %s", taskid, fname)
             return taskid
 
@@ -839,9 +839,9 @@ def cron_task(crontab, queue=b'default', never_skip=False, attempts=1, retry_del
     if not CronTab.__slots__:
         raise Exception("You must have the 'crontab' module installed to use @cron_task")
 
-    _assert(isinstance(queue, str),
+    _assert(isinstance(queue, (bytes, str)),
         "queue name provided must be a string, not %r", queue)
-    _assert(isinstance(crontab, str),
+    _assert(isinstance(crontab, (bytes, str)),
         "crontab provided must be a string, not %r", crontab)
     crontab = CronTab(crontab)
     def decorate(function):
@@ -922,11 +922,9 @@ def execute_task_threads(queues=None, threads=1, wait_per_thread=1, module=None)
         tt = threading.Thread(target=_execute_tasks, args=(queues,))
         tt.daemon = True
         tt.start()
+        tt.join()
         st.append(tt)
     _execute_tasks(queues)
-    while threading.active_count() > 2:
-        time.sleep(.05)
-    time.sleep(.05)
 
 def _execute_tasks(queues=None):
     '''
