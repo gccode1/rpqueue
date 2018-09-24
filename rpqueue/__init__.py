@@ -29,6 +29,7 @@ import threading
 import traceback
 import types
 import uuid
+import random
 
 try:
     from crontab import CronTab
@@ -270,6 +271,7 @@ def _get_work(conn, queues=None, timeout=1):
     if not queues:
         time.sleep(timeout)
         return
+    queues = _rearrange_queues(conn, queues)
     # cache the full strings
     _queues = []
     for q in queues:
@@ -991,6 +993,34 @@ def known_queues(conn=None):
         .execute()
     q = list(sorted(q, key=lambda x:x.lower()))
     return pq + [qi for qi in q if qi not in pq]
+
+def _rearrange_queues(conn, queues):
+    '''
+    Rearrage all queues.
+    '''
+    p = []
+    pq_all = conn.zscan("queues:wall", 0)[1]
+    pq = [(x[1], x[0]) for x in pq_all if x[0] in queues]
+    l = []
+    if pq:
+        q = [pq[0][1]]
+        p = pq[0][1]
+
+        for x,y in pq[1:]:
+            if x==p:
+                q.append(y)
+            else:
+                l.append(q)
+                q = [y]
+                p = x
+        l.append(q)
+        for i,x in enumerate(l):
+            l[i] = random.sample(x, len(x))
+    ret_queues = [y for x in l for y in x]
+    queues_without_priority = [x for x in queues if x not in ret_queues]
+    queues_without_priority = random.sample(queues_without_priority, len(queues_without_priority))
+    return ret_queues + queues_without_priority
+
 
 def _window(size, seq):
     iterators = []
