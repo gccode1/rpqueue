@@ -135,6 +135,7 @@ def set_key_prefix(pfix):
 
 PY3 = sys.version_info >= (3, 0)
 REGISTRY = {}
+MESSAGES = {}
 NEVER_SKIP = set()
 SHOULD_QUIT = multiprocessing.Array('i', (0,), lock=False)
 REENTRY_RETRY = 5
@@ -235,7 +236,7 @@ def _enqueue_call(conn, queue, fname, args, kwargs, delay=0, taskid=None):
         pipeline.zscore(qkey, taskid)
         last, current = pipeline.execute()
         #if current or (last and time.time()-last < REENTRY_RETRY):
-        if (current and abs(current - time.time() - delay) < .1) or (last and current and abs(last - current) > 0.01 and time.time()-last < REENTRY_RETRY):
+        if (current and current < time.time()) or (current and abs(current - time.time() - delay) < .1) or (last and current and abs(last - current) > 0.01 and time.time()-last < REENTRY_RETRY):
             log_handler.debug("SKIPPED: %s %s", taskid, fname)
             return taskid
 
@@ -303,6 +304,7 @@ def _get_work(conn, queues=None, timeout=1):
         pipeline.hget(args_key, id)
         pipeline.hdel(args_key, id)
         message = pipeline.execute()[0]
+        MESSAGES[threading.current_thread().getName()] = {"message": message, "taskid": id, "queue": q}
         if not message:
             # item was cancelled
             continue
@@ -854,8 +856,53 @@ def cron_task(crontab, queue=b'default', never_skip=False, attempts=1, retry_del
 
 PREVIOUS = None
 
+def _enqueue_call_before_quit(conn, message):
+    pipeline = conn.pipeline(True)
+    # prepare the message
+    taskid = message["taskid"]
+    queue = message["queue"].partition(b':')[2]
+    qkey = QUEUE_KEY + queue
+    nkey = NOW_KEY + queue
+    rqkey = RQUEUE_KEY + queue
+    ikey = MESSAGES_KEY + queue
+
+    message = message["message"]
+    if PY3:
+        taskid = taskid.decode("latin-1")
+        message = message.decode('latin-1')
+    work = json.loads(message)
+    if len(work) == 4:
+        work.append(time.time())
+    fname = work[1]
+    delay = 0
+    # enqueue it
+    pipeline.hset(ikey, taskid, message)
+    if taskid == fname:
+        item_id = taskid
+        sch = work[-1] if item_id in NEVER_SKIP else time.time()
+        delay = REGISTRY[item_id].next(sch)
+        ts = time.time()
+        pipeline.zadd(rqkey, **{taskid: ts})
+    if delay > 0:
+        pipeline.zadd(qkey, **{taskid: ts})
+    else:
+        pipeline.rpush(nkey, taskid)
+    pipeline.sadd(QUEUES_KNOWN, queue)
+    pipeline.execute()
+    if delay:
+        log_handler.debug("SENT: %s %s for %r", taskid, fname, datetime.datetime.utcfromtimestamp(ts))
+    else:
+        log_handler.debug("SENT: %s %s", taskid, fname)
+    return taskid
+
 def quit_on_signal(signum, frame):
     SHOULD_QUIT[0] = 1
+    if multiprocessing.current_process().name != 'MainProcess':
+        time.sleep(1.2)
+        conn = get_connection()
+        for message in MESSAGES.values():
+           _enqueue_call_before_quit(conn, message)
+        sys.exit(0)._exit()
 
 SUCCESS_LOG = None
 
@@ -924,9 +971,10 @@ def execute_task_threads(queues=None, threads=1, wait_per_thread=1, module=None)
         tt = threading.Thread(target=_execute_tasks, args=(queues,))
         tt.daemon = True
         tt.start()
-        tt.join()
         st.append(tt)
     _execute_tasks(queues)
+    for tt in st:
+        tt.join()
 
 def _execute_tasks(queues=None):
     '''
@@ -940,6 +988,8 @@ def _execute_tasks(queues=None):
             continue
 
         _execute_task(work, conn)
+        if not SHOULD_QUIT[0]:
+            MESSAGES.pop(threading.current_thread().getName())
 
 def _execute_task(work, conn):
     '''
