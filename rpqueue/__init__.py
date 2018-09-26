@@ -915,6 +915,7 @@ def execute_tasks(queues=None, threads_per_process=1, processes=1, wait_per_thre
     EXECUTE_TASKS = True
     signal.signal(signal.SIGUSR1, quit_on_signal)
     signal.signal(signal.SIGTERM, quit_on_signal)
+    signal.signal(signal.SIGINT, quit_on_signal)
     log_handler.setLevel(LOG_LEVELS[LOG_LEVEL.upper()])
     sp = []
     def _signal_subprocesses(signum, frame):
