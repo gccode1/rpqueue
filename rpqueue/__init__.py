@@ -897,11 +897,13 @@ def _enqueue_call_before_quit(conn, message):
 
 def quit_on_signal(signum, frame):
     SHOULD_QUIT[0] = 1
-    if multiprocessing.current_process().name != 'MainProcess':
+    if multiprocessing.current_process().name != 'MainProcess' and signum !=2:
         time.sleep(1.2)
         conn = get_connection()
-        for message in MESSAGES.values():
-           _enqueue_call_before_quit(conn, message)
+        while MESSAGES:
+            thread, message = list(MESSAGES.items())[-1]
+            _enqueue_call_before_quit(conn, message)
+            MESSAGES.pop(thread, None)
         sys.exit(0)._exit()
 
 SUCCESS_LOG = None
@@ -989,8 +991,7 @@ def _execute_tasks(queues=None):
             continue
 
         _execute_task(work, conn)
-        if not SHOULD_QUIT[0]:
-            MESSAGES.pop(threading.current_thread().getName())
+        MESSAGES.pop(threading.current_thread().getName(), None)
 
 def _execute_task(work, conn):
     '''
