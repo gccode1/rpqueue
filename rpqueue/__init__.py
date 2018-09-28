@@ -14,6 +14,10 @@ from __future__ import print_function
 import datetime
 from hashlib import sha1
 import imp
+try:
+    from itertools import izip
+except ImportError:
+    izip = zip
 import itertools
 try:
     import simplejson as json
@@ -1078,7 +1082,7 @@ def _window(size, seq):
     iterators = []
     for i in range(size):
         iterators.append(itertools.islice(seq, i, len(seq), size))
-    return itertools.izip(*iterators)
+    return izip(*iterators)
 
 def queue_sizes(conn=None):
     '''
@@ -1096,7 +1100,7 @@ def queue_sizes(conn=None):
     for queue in queues:
         pipeline.hget(SEEN_KEY, queue)
     items = pipeline.execute()
-    return zip(queues, map(sum, _window(3, items[:-len(queues)])), items[-len(queues):])
+    return list(zip(queues, map(sum, _window(3, items[:-len(queues)])), items[-len(queues):]))
 
 def clear_queue(queue, conn=None, delete=False):
     '''
@@ -1190,7 +1194,7 @@ def get_page(queue, page, per_page=50, conn=None):
     stasks = [task if isinstance(task, str) else task[0] for task in tasks]
     messages = conn.hmget(MESSAGES_KEY + queue, stasks) if tasks else []
     out = []
-    for tid, msg in itertools.izip(tasks, messages):
+    for tid, msg in izip(tasks, messages):
         if isinstance(tid, str):
             ts = '<now>'
         else:
