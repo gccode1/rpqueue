@@ -563,11 +563,19 @@ class Task(object):
         '''
         attempts = max(kwargs.pop('_attempts', 0), 0) - 1
         if attempts < 1:
+            if self.queue.decode("latin-1").startswith("failed_"):
+                _queue = self.queue
+            else:
+                _queue = b'failed_' + self.queue
+            self.execute(_queue = _queue, *args, **kwargs)
+            MESSAGES.pop(threading.current_thread().getName(), None)
             return
         kwargs['_attempts'] = attempts
         if self.retry_delay > 0 and 'delay' not in kwargs:
             kwargs['delay'] = self.retry_delay
-        return self.execute(*args, **kwargs)
+        ret_task = self.execute(*args, **kwargs)
+        MESSAGES.pop(threading.current_thread().getName(), None)
+        return ret_task
 
     def __repr__(self):
         return "<Task function=%s>"%(self.name,)
@@ -901,7 +909,7 @@ def _enqueue_call_before_quit(conn, message):
 
 def quit_on_signal(signum, frame):
     SHOULD_QUIT[0] = 1
-    if multiprocessing.current_process().name != 'MainProcess' and signum !=2:
+    if multiprocessing.current_process().name != 'MainProcess':
         time.sleep(1.2)
         conn = get_connection()
         while MESSAGES:
