@@ -337,7 +337,7 @@ def _get_work(conn, queues=None, timeout=1):
                 # re-add the call arguments
                 pipeline.hset(args_key, item_id, json.dumps(work[:4] + [time.time()]))
                 pipeline.execute()
-        return work
+        return (work + [queue])
 
 _handle_delayed_lua = script_load('''
 local run_again = false
@@ -528,7 +528,7 @@ class Task(object):
         '''
         delay = kwargs.pop('delay', None) or 0
         taskid = kwargs.pop('taskid', None)
-        _queue = kwargs.pop('_queue', None) or self.queue
+        _queue = kwargs.get('_queue', None) or self.queue
         if self.attempts > 1 and '_attempts' not in kwargs:
             kwargs['_attempts'] = self.attempts
 
@@ -562,17 +562,17 @@ class Task(object):
         directly or via ``**kwargs``.
         '''
         attempts = max(kwargs.pop('_attempts', 0), 0) - 1
+        if self.retry_delay > 0 and 'delay' not in kwargs:
+            kwargs['delay'] = self.retry_delay
         if attempts < 1:
-            if self.queue.decode("latin-1").startswith("failed_"):
-                _queue = self.queue
-            else:
-                _queue = b'failed_' + self.queue
-            self.execute(_queue = _queue, *args, **kwargs)
+            _queue = kwargs.get("_queue") or self.queue
+            if not _queue.decode("latin-1").startswith("failed_"):
+                _queue = b"failed_" + _queue
+            kwargs["_queue"] = _queue
+            self.execute(*args, **kwargs)
             MESSAGES.pop(threading.current_thread().getName(), None)
             return
         kwargs['_attempts'] = attempts
-        if self.retry_delay > 0 and 'delay' not in kwargs:
-            kwargs['delay'] = self.retry_delay
         ret_task = self.execute(*args, **kwargs)
         MESSAGES.pop(threading.current_thread().getName(), None)
         return ret_task
@@ -1010,7 +1010,7 @@ def _execute_task(work, conn):
     Internal implementation detail to execute a single task.
     '''
     try:
-        taskid, fname, args, kwargs, scheduled = work
+        taskid, fname, args, kwargs, scheduled, queue = work
     except ValueError as err:
         log_handler.exception(err)
         return
@@ -1028,6 +1028,7 @@ def _execute_task(work, conn):
         return
 
     to_execute = REGISTRY[fname](taskid, True)
+    kwargs["_queue"] = queue
 
     try:
         to_execute(*args, **kwargs)
