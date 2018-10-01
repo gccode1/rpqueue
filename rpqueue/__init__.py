@@ -272,7 +272,7 @@ def _get_work(conn, queues=None, timeout=1):
     # find the set of queues for processing
     pipeline = conn.pipeline(True)
     if not queues:
-        queues = known_queues(conn)
+        queues = known_queues(conn, ignore_failed_queues = True)
     if not queues:
         time.sleep(timeout)
         return
@@ -529,6 +529,8 @@ class Task(object):
         delay = kwargs.pop('delay', None) or 0
         taskid = kwargs.pop('taskid', None)
         _queue = kwargs.get('_queue', None) or self.queue
+        if PY3 and "_queue" in kwargs:
+            kwargs["_queue"] = kwargs["_queue"].decode("latin-1")
         if self.attempts > 1 and '_attempts' not in kwargs:
             kwargs['_attempts'] = self.attempts
 
@@ -1047,7 +1049,7 @@ def set_priority(queue, qpri, conn=None):
     conn = conn or get_connection()
     conn.zadd(QUEUES_PRIORITY, queue, qpri)
 
-def known_queues(conn=None):
+def known_queues(conn=None, ignore_failed_queues = False):
     '''
     Get a list of all known queues.
     '''
@@ -1057,7 +1059,10 @@ def known_queues(conn=None):
         .zrange(QUEUES_PRIORITY, 0, -1) \
         .execute()
     q = list(sorted(q, key=lambda x:x.lower()))
-    return pq + [qi for qi in q if qi not in pq]
+    queues = pq + [qi for qi in q if qi not in pq]
+    if ignore_failed_queues:
+        queues = [queue for queue in queues if not queue.decode("latin-1").startswith("failed_")]
+    return queues
 
 def _rearrange_queues(conn, queues):
     '''
