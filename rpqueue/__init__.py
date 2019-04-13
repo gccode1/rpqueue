@@ -146,6 +146,8 @@ POOL = None
 
 LOG_LEVELS = dict((v, getattr(logging, v)) for v in ['DEBUG', 'INFO', 'WARNING', 'ERROR'])
 LOG_LEVEL = 'debug'
+FORMAT = '%(levelname)s:%(name)s:%(threadName)s:%(message)s'
+logging.basicConfig(format=FORMAT)
 logging.basicConfig()
 log_handler = logging.root
 
@@ -232,7 +234,8 @@ def _enqueue_call(conn, queue, fname, args, kwargs, delay=0, taskid=None):
         pipeline.zscore(rqkey, taskid)
         pipeline.zscore(qkey, taskid)
         last, current = pipeline.execute()
-        if current or (last and time.time()-last < REENTRY_RETRY):
+        #if current or (last and time.time()-last < REENTRY_RETRY):
+        if (current and abs(current - time.time() - delay) < .1) or (last and time.time()-last>=0 and time.time()-last < REENTRY_RETRY):
             log_handler.debug("SKIPPED: %s %s", taskid, fname)
             return taskid
 
